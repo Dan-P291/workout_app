@@ -29,3 +29,7 @@ env/
 
 # Jupyter (if applicable)
 .ipynb_checkpoints/
+
+# Data
+
+data/

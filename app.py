@@ -17,7 +17,7 @@ st.write("Get a personalized workout plan powered by Google Gemini AI (Free to U
 # User inputs
 col1, col2 = st.columns(2)
 with col1:
-    age = st.slider("Age:", 16, 80, 30)
+    age = st.slider("Age:", 16, 100, 30)
     gender = st.selectbox("Gender:", ["Male", "Female"])
 
 with col2:
@@ -33,7 +33,10 @@ with col4:
     equipment = st.multiselect("Available Equipment:", ["Dumbbells", "Barbell", "Cardio Machine", "Bodyweight Only"], default=["Bodyweight Only"])
 
 # Specific exercises text field
-specific_exercises = st.text_area("💡 Specific Exercises (Optional):", placeholder="e.g., Bench Press, Deadlifts, Squats", height=100)
+specific_exercises = st.text_area("💡 Specific Exercises (Optional):", placeholder="e.g., Barbell Bench Press, Barbell Deadlift, Barbell Back Squat", height=100)
+
+# Unwanted exercises text field
+unwanted_exercises = st.text_area("💡 Unwanted Exercises (Optional):", placeholder="e.g., Barbell Bench Press, Barbell Deadlift Barbell Back Squat", height=100)
 
 # Specific goals text field
 specific_goals = st.text_area("💡 Specific Goals (Optional):", placeholder="e.g., Improve posture, increase endurance, build bigger arms, recover from injury, etc.", height=100)
@@ -48,6 +51,7 @@ if st.button("Generate My Workout Plan", type="primary"):
     Main Goal(s): {goals_str}
     Available equipment: {equipment_str}
     Specific exercises to include: {specific_exercises if specific_exercises.strip() else "No specific exercises mentioned"}
+    Specific exercises to exclude: {unwanted_exercises if unwanted_exercises.strip() else "No specific exercises unwanted"}
     Specific goals: {goals_str}
     
     Please include:
