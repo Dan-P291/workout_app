@@ -26,8 +26,8 @@ def analyze_workout_csv(uploaded_file):
         if not all(col in df.columns for col in required_cols):
             return None, None, "CSV missing required columns: exercise_title, start_time"
         
-        # Parse dates
-        df['start_time'] = pd.to_datetime(df['start_time'], format='%d %b %Y, %H:%M', errors='coerce')
+        # More robust date parsing
+        df['start_time'] = pd.to_datetime(df['start_time'], errors='coerce')
         df = df.dropna(subset=['start_time'])
         
         if df.empty:
@@ -91,7 +91,7 @@ def analyze_workout_csv(uploaded_file):
         # Recent workouts (last 2 weeks)
         two_weeks_ago = datetime.now() - timedelta(days=14)
         recent_df = df[df['start_time'] >= two_weeks_ago]
-        recent_exercises = recent_df['exercise_title'].unique()[:5] if len(recent_df) > 0 else []
+        # recent_exercises = recent_df['exercise_title'].unique()[:5] if len(recent_df) > 0 else []
         
         # Build summary text for display
         summary = f"""**Your Workout History Summary:**
@@ -100,8 +100,6 @@ def analyze_workout_csv(uploaded_file):
 - Average frequency: {freq_per_week:.1f} workouts per week
 - Total unique exercises: {df['exercise_title'].nunique()}
 
-**Recently Performed (last 2 weeks):**
-{', '.join(recent_exercises) if len(recent_exercises) > 0 else "No recent workouts logged"}
 """
         
         # Build reference text for Gemini - used to suggest specific weights
@@ -117,6 +115,12 @@ st.write("Get a personalized workout plan powered by Google Gemini AI (Free to U
 
 # CSV upload section
 st.write("### 📊 Upload Your Hevy Workout History (Optional)")
+st.write("""##### To export your workout data from Hevy:
+         Go to Profile > 
+         Settings (top right) > 
+         Export & Import Data > 
+         Export Data > 
+         Export Workouts""")
 uploaded_file = st.file_uploader("Choose your workout_data.csv", type=['csv'], help="Upload your exported workout data to help create a better plan")
 
 workout_history_summary = ""
@@ -149,7 +153,7 @@ col3, col4 = st.columns(2)
 with col3:
     goal = st.multiselect("Primary Goal:", ["Weight Loss", "Muscle Gain", "Strength", "General Fitness"], default=["Strength"])
 with col4:
-    equipment = st.multiselect("Available Equipment:", ["Dumbbells", "Barbell", "Cardio Machine", "Bodyweight Only"], default=["Bodyweight Only"])
+    equipment = st.multiselect("Available Equipment:", ["Full Gym Access", "Home Gym (Limited)", "Cardio Machines", "Bodyweight Only"], default=["Full Gym Access"])
 
 # Specific exercises text field
 specific_exercises = st.text_area("💡 Specific Exercises (Optional):", placeholder="e.g., Barbell Bench Press, Barbell Deadlift, Barbell Back Squat", height=100)
@@ -177,7 +181,7 @@ IMPORTANT - User's Workout History:
 Use this data to:
 - Recommend exercises the user is already familiar with when possible
 - Suggest specific weights based on their current capability levels (as reference above)
-- For exercises they've done before, suggest weight progression: If they did 40kg for 12 reps, suggest 42.5-45kg for the new plan
+- For exercises they've done before, suggest progressive overload: Use 2.5kg increments. 
 - For new exercises, use similar exercises' capability as a baseline
 - Adapt frequency and volume to match their typical routine
 """
