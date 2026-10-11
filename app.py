@@ -111,7 +111,7 @@ def analyze_workout_csv(uploaded_file):
         return None, None, f"Error reading CSV: {str(e)}"
 
 st.title("🏋️ AI Workout Planner by Daniel")
-st.write("Get a personalized workout plan powered by Google Gemini AI (Free to Use!)")
+st.write("Get a personalised workout plan powered by Google Gemini AI (Free to Use!)")
 
 # CSV upload section
 st.write("### 📊 Upload Your Hevy Workout History (Optional)")
@@ -151,15 +151,16 @@ with col2:
 st.write("### Preferences")
 col3, col4 = st.columns(2)
 with col3:
-    goal = st.multiselect("Primary Goal:", ["Weight Loss", "Muscle Gain", "Strength", "General Fitness"], default=["Strength"])
+    goal = st.multiselect("Primary Goal(s):", ["Weight Loss", "Muscle Gain", "Strength", "Cardio Fitness"], default=["Strength"])
 with col4:
     equipment = st.multiselect("Available Equipment:", ["Full Gym Access", "Home Gym (Limited)", "Cardio Machines", "Bodyweight Only"], default=["Full Gym Access"])
 
+workout_plan_length = st.slider("Workout Plan Length (weeks):", 1, 12, 4)
 # Specific exercises text field
 specific_exercises = st.text_area("💡 Specific Exercises (Optional):", placeholder="e.g., Barbell Bench Press, Barbell Deadlift, Barbell Back Squat", height=100)
 
 # Unwanted exercises text field
-unwanted_exercises = st.text_area("💡 Unwanted Exercises (Optional):", placeholder="e.g., Barbell Bench Press, Barbell Deadlift Barbell Back Squat", height=100)
+unwanted_exercises = st.text_area("💡 Unwanted Exercises (Optional):", placeholder="e.g., Barbell Bench Press, Barbell Deadlift, Barbell Back Squat", height=100)
 
 # Specific goals text field
 specific_goals = st.text_area("💡 Specific Goals (Optional):", placeholder="e.g., Improve posture, increase endurance, build bigger arms, recover from injury, etc.", height=100)
@@ -187,7 +188,7 @@ Use this data to:
 """
     
     prompt = f"""Create a detailed {days_per_week}-day workout plan for a {age}-year-old {gender.lower()} 
-    at {fitness_level.lower()} fitness level.
+    at {fitness_level.lower()} fitness level with suggested progressions over a {workout_plan_length}-week period.
     Main Goal(s): {goals_str}
     Available equipment: {equipment_str}
     Specific exercises to include: {specific_exercises if specific_exercises.strip() else "No specific exercises mentioned"}
@@ -208,7 +209,7 @@ Use this data to:
     with st.spinner("🤖 Creating your personalised workout plan..."):
         try:
             response = client.models.generate_content(
-                model='gemini-3-flash-preview',
+                model='gemini-3.1-flash-lite',
                 contents=prompt
             )
             workout_plan = response.text
