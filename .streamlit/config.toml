@@ -1,0 +1,13 @@
+# Theme: teal base (#008080) with blue and grey accents.
+# Commit this file. Only secrets.toml should be git-ignored.
+[theme]
+base = "light"
+primaryColor = "#008080"               # buttons, sliders, focus rings
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#EEF3F7"   # input fields, tags (soft blue-grey)
+textColor = "#1E293B"                  # slate
+linkColor = "#1F5F8B"                  # blue
+borderColor = "#CBD5E1"                # grey
+showWidgetBorder = true
+baseRadius = "10px"
+font = "sans serif"

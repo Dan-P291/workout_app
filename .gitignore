@@ -33,3 +33,6 @@ env/
 # Data
 
 data/
+
+# Archive
+arc/
