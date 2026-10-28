@@ -68,7 +68,12 @@ GLOBAL_MAX_PER_DAY = 200       # across all visitors; keep this below your Gemin
 
 
 class RateLimiter:
-    """In-memory limiter shared by every session on this server process."""
+    """In-memory limiter shared by every session on this server process.
+
+    A slot is *reserved* when generation starts (so double-clicks and parallel
+    tabs can't fire several requests) and *released* if no plan is produced, so
+    only successful plans leave a cooldown behind.
+    """
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -76,7 +81,7 @@ class RateLimiter:
         self._recent = deque()  # timestamps of generations in the last 24h
 
     def try_acquire(self, client_keys):
-        """Return (allowed, message). Records the attempt if allowed."""
+        """Reserve a slot. Returns (ticket, message); ticket is None if blocked."""
         now = time.time()
         with self._lock:
             while self._recent and now - self._recent[0] > 86400:
@@ -88,15 +93,19 @@ class RateLimiter:
                 default=0,
             )
             if wait > 0:
-                return False, (f"⏳ Please wait {int(wait) + 1} more seconds "
-                               "before generating another plan.")
+                return None, (f"⏳ Please wait {int(wait) + 1} more seconds "
+                              "before generating another plan.")
 
             if sum(1 for t in self._recent if now - t <= 60) >= GLOBAL_MAX_PER_MINUTE:
-                return False, "🚦 The app is busy right now. Please try again in a minute."
+                return None, "🚦 The app is busy right now. Please try again in a minute."
             if len(self._recent) >= GLOBAL_MAX_PER_DAY:
-                return False, ("📅 The app has hit its daily limit of free plans. "
-                               "Please try again later.")
+                return None, ("📅 The app has hit its daily limit of free plans. "
+                              "Please try again later.")
 
+            ticket = {
+                "time": now,
+                "previous": {k: self._last_by_client.get(k) for k in client_keys},
+            }
             self._recent.append(now)
             for k in client_keys:
                 self._last_by_client[k] = now
@@ -106,12 +115,41 @@ class RateLimiter:
                 cutoff = now - CLIENT_COOLDOWN_SECONDS
                 self._last_by_client = {k: t for k, t in self._last_by_client.items()
                                         if t > cutoff}
-            return True, ""
+            return ticket, ""
+
+    def release(self, ticket, refund_global=True):
+        """Undo a reservation because no plan was produced.
+
+        The visitor's cooldown is always restored. The global minute/day counters
+        are only refunded when refund_global is True, i.e. when Gemini never
+        answered (so no quota was used)."""
+        if ticket is None:
+            return
+        with self._lock:
+            for key, previous in ticket["previous"].items():
+                if self._last_by_client.get(key) == ticket["time"]:
+                    if previous is None:
+                        self._last_by_client.pop(key, None)
+                    else:
+                        self._last_by_client[key] = previous
+            if refund_global:
+                try:
+                    self._recent.remove(ticket["time"])
+                except ValueError:
+                    pass
 
 
 @st.cache_resource
 def get_rate_limiter():
     return RateLimiter()
+
+
+def is_overloaded_error(exc):
+    """True for temporary Gemini problems such as high demand or rate limits."""
+    code = getattr(exc, "code", None)
+    text = str(exc).lower()
+    return (code in (429, 500, 503, 504)
+            or any(w in text for w in ("overloaded", "unavailable", "high demand")))
 
 
 def get_client_keys():
@@ -759,12 +797,12 @@ def section_title(text):
 inject_css()
 
 st.markdown(
-    '<div class="hero"><h1>🏋️ AI Workout Planner</h1>'
+    '<div class="hero"><h1>🏋️ AI Workout Planner by Daniel</h1>'
     '<p>Get a personalised workout plan powered by Google Gemini AI (Free to Use!)</p></div>',
     unsafe_allow_html=True)
 
 st.markdown("""<div class="notice"><b>🔒 Privacy &amp; safety</b><ul>
-<li>The details you enter (and any workout history you upload) are sent to Google's Gemini API to create your plan. Google may use submitted content to improve its products, so please don't include names, contact details or sensitive medical information.</li>
+<li>The details you enter (and any workout history you upload) are sent to Google's Gemini API to create your plan. Depending on the API plan, Google may use submitted content to improve its products, so please don't include names, contact details or sensitive medical information.</li>
 <li>This app doesn't save your data to a database or user account.</li>
 <li>Plans are AI-generated and are general fitness information, not medical advice. Check with a doctor before starting a new programme, especially if you have an injury or health condition, and stop if something hurts.</li>
 </ul></div>""", unsafe_allow_html=True)
@@ -884,14 +922,21 @@ if generate_clicked:
         st.warning("Please fix the equipment selection above before generating a plan.")
         st.stop()
 
-    allowed, limit_message = get_rate_limiter().try_acquire(get_client_keys())
-    if not allowed:
+    limiter = get_rate_limiter()
+    ticket, limit_message = limiter.try_acquire(get_client_keys())
+    if ticket is None:
         st.warning(limit_message)
         generate_clicked = False  # keep any previous plan visible below
 
 if generate_clicked:
     selected_days = sorted(selected_days, key=WEEKDAYS.index)
 
+    # The cooldown only sticks if we end up with a plan. Otherwise release the
+    # reservation in `finally`. refund_global stays False unless Gemini itself
+    # failed to answer (no quota used).
+    completed = False
+    refund_global = False
+    api_answered = False
     with st.spinner("🤖 Creating your personalised workout plan..."):
         try:
             prompt = build_prompt(
@@ -905,19 +950,28 @@ if generate_clicked:
                 history_reference=exercise_reference,
             )
             plan = generate_plan(prompt, selected_model, selected_days, workout_plan_length)
+            api_answered = True
             plan_markdown = plan_to_markdown(plan, selected_days)
+            pdf_bytes = build_pdf(plan_markdown)
             st.session_state["workout_plan"] = plan_markdown
-            st.session_state["pdf_bytes"] = build_pdf(plan_markdown)
+            st.session_state["pdf_bytes"] = pdf_bytes
+            completed = True
         except PlanGenerationError as e:
-            st.session_state.pop("workout_plan", None)
-            st.session_state.pop("pdf_bytes", None)
-            st.error(str(e))
-        except Exception:
-            st.session_state.pop("workout_plan", None)
-            st.session_state.pop("pdf_bytes", None)
+            # Gemini answered but the response was unusable, so quota was spent
+            st.error(f"{e} This attempt didn't start your cooldown, so you can try again now.")
+        except Exception as e:
             logging.exception("Plan generation failed")
-            st.error("Sorry, something went wrong while creating your plan. "
-                     "Please try again in a minute or two.")
+            refund_global = not api_answered
+            if is_overloaded_error(e):
+                st.error("The AI model is under heavy demand right now, so your plan "
+                         "couldn't be created. This attempt didn't start your cooldown. "
+                         "Try again in a moment, or pick a different model.")
+            else:
+                st.error("Sorry, something went wrong while creating your plan. "
+                         "This attempt didn't start your cooldown, so you can try again now.")
+        finally:
+            if not completed:
+                limiter.release(ticket, refund_global=refund_global)
 
 # ---------------------------------------------------------------------------
 # Display (persists across reruns, e.g. after clicking download)
